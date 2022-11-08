@@ -10,6 +10,7 @@ const jsdom = require('jsdom')
  * Each call to the returned runner is run in a new VM.
  */
 async function createScriptRunner(config) {
+    const baseUrl = process.env.PUBLIC_URL || "http://localhost:8000/";
     let fs = config.fs
 
     let ext = path.extname(config.entry).slice(1)
@@ -24,9 +25,7 @@ async function createScriptRunner(config) {
             }
 
             async fetch(url, fetchOptions) {
-                if (process.env.PUBLIC_URL) {
-                    url = url.replace(process.env.PUBLIC_URL, '')
-                }
+                url = url.replace(baseUrl, "");
 
                 let relativePathname = url[0] === '/' ? url.slice(1) : url
                 let filesystemPath = path.join(config.root, relativePathname)
@@ -55,6 +54,9 @@ async function createScriptRunner(config) {
             virtualConsole: new jsdom.VirtualConsole().sendTo(console),
             resources: new ResourceLoader(queue),
             runScripts: "dangerously",
+            // ResourceLoader Not Fetching Relative URLs On 16.2.2 #2932
+            // https://github.com/jsdom/jsdom/issues/2932
+            url: baseUrl,
             beforeParse(window) {
                 // Polyfill rAF for react
                 window.requestAnimationFrame = require('raf')
@@ -77,6 +79,10 @@ async function createScriptRunner(config) {
                 }
             },
         }) 
+
+        // Resolve queues after DOMContentLoaded has completed.
+        queue.push(new Promise((resolve) =>
+          dom.window.document.addEventListener('DOMContentLoaded', () => resolve(dom))));
 
         while (await queue.shift()) {}
         
